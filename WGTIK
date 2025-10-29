@@ -1,0 +1,772 @@
+package main
+
+import (
+	"encoding/csv"
+	"fmt"
+	"os"
+	"strconv"
+	"strings"
+	"time"
+)
+
+const NMAX = 100
+
+// Harga tiket resmi
+const (
+	FestivalPrice = 150000.0
+	VIPPrice      = 200000.0
+	TribunPrice   = 75000.0
+)
+
+type Tiket struct {
+	IdPembeli  int
+	Nama       string
+	JenisTiket string
+	Harga      float64
+	Tanggal    time.Time
+	Status     string // "pending", "confirmed", "rejected"
+}
+
+type User struct {
+	Username string
+	Password string
+	Role     string
+}
+
+type tabTiket [NMAX]Tiket
+type tabUser [NMAX]User
+
+var dataTiket tabTiket
+var dataUser = tabUser{
+	{"admin", "admin123", "admin"},
+	{"user", "user123", "user"},
+}
+var nTiket, nUser = 0, 2
+
+func main() {
+	var pilihan int
+	for pilihan != 3 {
+		fmt.Println("\n=== SISTEM TIKET EVENT ===")
+		fmt.Println("1. Login")
+		fmt.Println("2. Daftar")
+		fmt.Println("3. Keluar")
+		fmt.Print("Pilihan: ")
+		fmt.Scan(&pilihan)
+
+		switch pilihan {
+		case 1:
+			loginPage()
+		case 2:
+			daftarAkunBaru()
+		case 3:
+			fmt.Println("Terima kasih, sampai jumpa!")
+		default:
+			fmt.Println("Pilihan tidak valid.")
+		}
+	}
+}
+
+func loginPage() {
+	var username, password string
+	fmt.Print("Masukkan Username: ")
+	fmt.Scan(&username)
+	fmt.Print("Masukkan Password: ")
+	fmt.Scan(&password)
+	user, found := login(username, password)
+	if !found {
+		fmt.Println("Login gagal.")
+		return
+	}
+	fmt.Printf("Login berhasil sebagai %s\n", user.Role)
+	menuUtama(user)
+}
+
+func login(username, password string) (User, bool) {
+	for i := 0; i < nUser; i++ {
+		if dataUser[i].Username == username && dataUser[i].Password == password {
+			return dataUser[i], true
+		}
+	}
+	return User{}, false
+}
+
+func daftarAkunBaru() {
+	if nUser >= NMAX {
+		fmt.Println("Jumlah akun penuh.")
+		return
+	}
+	var username, password, role string
+	fmt.Print("Username baru: ")
+	fmt.Scan(&username)
+	for i := 0; i < nUser; i++ {
+		if dataUser[i].Username == username {
+			fmt.Println("Username sudah terdaftar.")
+			return
+		}
+	}
+	fmt.Print("Password: ")
+	fmt.Scan(&password)
+	if len(password) < 6 {
+		fmt.Println("Password minimal 6 karakter.")
+		return
+	}
+	fmt.Print("Role (admin/user): ")
+	fmt.Scan(&role)
+	role = strings.ToLower(role)
+	if role != "admin" && role != "user" {
+		fmt.Println("Role tidak valid.")
+		return
+	}
+	dataUser[nUser] = User{username, password, role}
+	nUser++
+	fmt.Println("Pendaftaran berhasil.")
+}
+
+func menuUtama(user User) {
+	for {
+		fmt.Println("\n===== MENU =====")
+		if user.Role == "admin" {
+			fmt.Println("1. Lihat Semua Tiket")
+			fmt.Println("2. Konfirmasi Pembelian Tiket")
+			fmt.Println("3. Tolak Pembelian Tiket")
+			fmt.Println("4. Cari Tiket Berdasarkan ID")
+			fmt.Println("5. Urutkan Tiket Berdasarkan Harga")
+			fmt.Println("6. Urutkan Tiket Berdasarkan Nama")
+			fmt.Println("7. Total Pendapatan")
+			fmt.Println("8. Tampilkan Excel di Terminal")
+			fmt.Println("9. Logout")
+		} else {
+			fmt.Println("1. Beli Tiket")
+			fmt.Println("2. Lihat Tiket Saya")
+			fmt.Println("3. Cari Tiket Berdasarkan ID")
+			fmt.Println("4. Tampilkan Excel di Terminal")
+			fmt.Println("5. Logout")
+		}
+
+		var pilihan int
+		fmt.Print("Pilih menu: ")
+		fmt.Scan(&pilihan)
+
+		if user.Role == "admin" {
+			switch pilihan {
+			case 1:
+				tampilkanSemuaTiket()
+			case 2:
+				konfirmasiTiket()
+			case 3:
+				tolakTiket()
+			case 4:
+				cariTiketBerdasarkanID()
+			case 5:
+				urutTiketBerdasarkanHarga()
+			case 6:
+				urutTiketBerdasarkanNama()
+			case 7:
+				fmt.Printf("Total Pendapatan: Rp%.0f\n", totalPendapatan())
+			case 8:
+				tampilkanExcelDiTerminal("tiket_data.csv")
+			case 9:
+				return
+			default:
+				fmt.Println("Pilihan tidak valid.")
+			}
+		} else {
+			switch pilihan {
+			case 1:
+				beliTiket(user.Username)
+			case 2:
+				lihatTiketSaya(user.Username)
+			case 3:
+				cariTiketBerdasarkanID()
+			case 4:
+				tampilkanExcelDiTerminal("tiket_data.csv")
+			case 5:
+				return
+			default:
+				fmt.Println("Pilihan tidak valid.")
+			}
+		}
+	}
+}
+
+func getHargaByJenis(jenis string) float64 {
+	switch strings.ToLower(jenis) {
+	case "festival":
+		return FestivalPrice
+	case "vip":
+		return VIPPrice
+	case "tribun":
+		return TribunPrice
+	default:
+		return 0
+	}
+}
+
+func beliTiket(username string) {
+	if nTiket >= NMAX {
+		fmt.Println("Kapasitas tiket penuh.")
+		return
+	}
+
+	fmt.Println("\n=== BELI TIKET ===")
+	fmt.Printf("Festival: Rp%.0f\n", FestivalPrice)
+	fmt.Printf("VIP     : Rp%.0f\n", VIPPrice)
+	fmt.Printf("Tribun  : Rp%.0f\n", TribunPrice)
+
+	var id int
+	var nama, jenis string
+
+	fmt.Print("ID Pembeli: ")
+	fmt.Scan(&id)
+	fmt.Print("Nama Pembeli: ")
+	fmt.Scan(&nama)
+	fmt.Print("Jenis Tiket (Festival/VIP/Tribun): ")
+	fmt.Scan(&jenis)
+
+	harga := getHargaByJenis(jenis)
+	if harga == 0 {
+		fmt.Println("Jenis tiket tidak valid.")
+		return
+	}
+
+	dataTiket[nTiket] = Tiket{
+		IdPembeli:  id,
+		Nama:       nama,
+		JenisTiket: jenis,
+		Harga:      harga,
+		Tanggal:    time.Now(),
+		Status:     "pending",
+	}
+	nTiket++
+
+	fmt.Printf("Pembelian tiket berhasil diajukan!\n")
+	fmt.Printf("Jenis: %s | Harga: Rp%.0f\n", jenis, harga)
+	fmt.Println("Status: Menunggu konfirmasi admin")
+}
+
+func lihatTiketSaya(username string) {
+	fmt.Println("\n=== TIKET SAYA ===")
+	fmt.Printf("Festival: Rp%.0f | VIP: Rp%.0f | Tribun: Rp%.0f\n", FestivalPrice, VIPPrice, TribunPrice)
+	fmt.Println("=" + strings.Repeat("=", 80))
+
+	found := false
+	for i := 0; i < nTiket; i++ {
+		t := dataTiket[i]
+		var harga float64
+		switch strings.ToLower(t.JenisTiket) {
+		case "festival":
+			harga = FestivalPrice
+		case "vip":
+			harga = VIPPrice
+		case "tribun":
+			harga = TribunPrice
+		default:
+			harga = t.Harga
+		}
+
+		statusColor := ""
+		switch t.Status {
+		case "confirmed":
+			statusColor = "✅ DIKONFIRMASI"
+		case "pending":
+			statusColor = "⏳ MENUNGGU"
+		case "rejected":
+			statusColor = "❌ DITOLAK"
+		}
+
+		fmt.Printf("ID: %d | Nama: %s | Jenis: %s | Harga: Rp%.0f | Status: %s | Tanggal: %s\n",
+			t.IdPembeli, t.Nama, t.JenisTiket, harga, statusColor, t.Tanggal.Format("02-01-2006 15:04"))
+		found = true
+	}
+
+	if !found {
+		fmt.Println("Belum ada tiket.")
+	}
+}
+
+func tampilkanSemuaTiket2(i int) {
+	if i >= nTiket {
+		return // basis: sudah tampil semua tiket
+	}
+
+	t := dataTiket[i]
+	var harga float64
+	switch strings.ToLower(t.JenisTiket) {
+	case "festival":
+		harga = FestivalPrice
+	case "vip":
+		harga = VIPPrice
+	case "tribun":
+		harga = TribunPrice
+	default:
+		harga = t.Harga
+	}
+
+	statusColor := ""
+	switch t.Status {
+	case "confirmed":
+		statusColor = "✅ DIKONFIRMASI"
+	case "pending":
+		statusColor = "⏳ MENUNGGU"
+	case "rejected":
+		statusColor = "❌ DITOLAK"
+	}
+
+	fmt.Printf("[%d] ID: %d | Nama: %s | Jenis: %s | Harga: Rp%.0f | Status: %s | Tanggal: %s\n",
+		i+1, t.IdPembeli, t.Nama, t.JenisTiket, harga, statusColor, t.Tanggal.Format("02-01-2006 15:04"))
+
+	tampilkanSemuaTiket2(i + 1) // rekursif panggil tiket selanjutnya
+}
+
+func tampilkanSemuaTiket() {
+	if nTiket == 0 {
+		fmt.Println("Belum ada tiket.")
+		return
+	}
+
+	fmt.Println("\n=== SEMUA TIKET ===")
+	fmt.Printf("Festival: Rp%.0f | VIP: Rp%.0f | Tribun: Rp%.0f\n", FestivalPrice, VIPPrice, TribunPrice)
+	fmt.Println("=" + strings.Repeat("=", 90))
+
+	tampilkanSemuaTiket2(0) // mulai dari indeks 0
+}
+
+
+// Fungsi untuk menampilkan Excel di terminal
+func tampilkanExcelDiTerminal(filename string) {
+	simpanDataKeCSV(filename)
+
+	file, err := os.Open(filename)
+	if err != nil {
+		fmt.Printf("Gagal membuka file %s: %v\n", filename, err)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	records, err := reader.ReadAll()
+	if err != nil {
+		fmt.Printf("Gagal membaca file: %v\n", err)
+		return
+	}
+
+	if len(records) == 0 {
+		fmt.Println("File kosong.")
+		return
+	}
+
+	fmt.Println("\n" + strings.Repeat("=", 100))
+	fmt.Println("📊 TAMPILAN EXCEL DI TERMINAL")
+	fmt.Printf("📁 File: %s\n", filename)
+	fmt.Println(strings.Repeat("=", 100))
+
+	colWidths := []int{10, 20, 12, 12, 15, 20} // ID, Nama, Jenis, Harga, Status, Tanggal
+
+	// Header border
+	fmt.Print("┌")
+	for i, w := range colWidths {
+		fmt.Print(strings.Repeat("─", w))
+		if i < len(colWidths)-1 {
+			fmt.Print("┬")
+		}
+	}
+	fmt.Println("┐")
+
+	// Header names
+	fmt.Print("│")
+	headers := []string{"ID", "Nama", "Jenis", "Harga", "Status", "Tanggal"}
+	for i, header := range headers {
+		fmt.Printf(" %-*s│", colWidths[i]-1, header)
+	}
+	fmt.Println()
+
+	// Separator
+	fmt.Print("├")
+	for i, w := range colWidths {
+		fmt.Print(strings.Repeat("─", w))
+		if i < len(colWidths)-1 {
+			fmt.Print("┼")
+		}
+	}
+	fmt.Println("┤")
+
+	// Data rows
+	for i, record := range records {
+		if i == 0 {
+			continue // skip header
+		}
+
+		fmt.Print("│")
+		for j := 0; j < len(colWidths); j++ {
+			var field string
+			if j < len(record) {
+				field = record[j]
+			} else {
+				field = ""
+			}
+
+			// Format kolom Harga
+			if j == 3 && field != "" {
+				if harga, err := strconv.ParseFloat(field, 64); err == nil {
+					field = fmt.Sprintf("Rp%.0f", harga)
+				}
+			} else if j == 4 { // Kolom Status
+				switch strings.ToLower(field) {
+				case "confirmed":
+					field = "✅ CONFIRMED"
+				case "pending":
+					field = "⏳ PENDING"
+				case "rejected":
+					field = "❌ REJECTED"
+				}
+			}
+
+			// Potong teks jika terlalu panjang
+			if len(field) > colWidths[j]-2 {
+				field = field[:colWidths[j]-5] + "..."
+			}
+
+			fmt.Printf(" %-*s│", colWidths[j]-1, field)
+		}
+		fmt.Println()
+	}
+
+	// Bottom border
+	fmt.Print("└")
+	for i, w := range colWidths {
+		fmt.Print(strings.Repeat("─", w))
+		if i < len(colWidths)-1 {
+			fmt.Print("┴")
+		}
+	}
+	fmt.Println("┘")
+
+	// Statistik
+	fmt.Println(strings.Repeat("=", 100))
+	fmt.Printf("📈 STATISTIK: Total %d baris data\n", len(records)-1)
+
+	confirmed, pending, rejected := 0, 0, 0
+	totalPendapatan := 0.0
+
+	for i, record := range records {
+		if i == 0 || len(record) < 5 {
+			continue
+		}
+
+		switch strings.ToLower(record[4]) {
+		case "confirmed":
+			confirmed++
+			if harga, err := strconv.ParseFloat(record[3], 64); err == nil {
+				totalPendapatan += harga
+			}
+		case "pending":
+			pending++
+		case "rejected":
+			rejected++
+		}
+	}
+
+	fmt.Printf("✅ Dikonfirmasi: %d | ⏳ Menunggu: %d | ❌ Ditolak: %d\n", confirmed, pending, rejected)
+	fmt.Printf("💰 Total Pendapatan: Rp%.0f\n", totalPendapatan)
+	fmt.Println(strings.Repeat("=", 100))
+}
+
+
+// Fungsi helper untuk menyimpan data ke CSV (untuk tampilan Excel)
+func simpanDataKeCSV(filename string) {
+	file, err := os.Create(filename)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	writer := csv.NewWriter(file)
+	defer writer.Flush()
+
+	writer.Write([]string{"ID", "Nama", "Jenis", "Harga", "Status", "Tanggal"})
+
+	for i := 0; i < nTiket; i++ {
+		t := dataTiket[i]
+		record := []string{
+			strconv.Itoa(t.IdPembeli),
+			t.Nama,
+			t.JenisTiket,
+			strconv.FormatFloat(getHargaByJenis(t.JenisTiket), 'f', 0, 64),
+			t.Status,
+			t.Tanggal.Format("2006-01-02 15:04"),
+		}
+		writer.Write(record)
+	}
+}
+
+func konfirmasiTiket() {
+	if nTiket == 0 {
+		fmt.Println("Belum ada tiket untuk dikonfirmasi.")
+		return
+	}
+
+	fmt.Println("\n=== KONFIRMASI TIKET ===")
+
+	pendingFound := false
+	for i := 0; i < nTiket; i++ {
+		if dataTiket[i].Status == "pending" {
+			t := dataTiket[i]
+			var harga float64
+			switch strings.ToLower(t.JenisTiket) {
+			case "festival":
+				harga = FestivalPrice
+			case "vip":
+				harga = VIPPrice
+			case "tribun":
+				harga = TribunPrice
+			default:
+				harga = t.Harga
+			}
+			fmt.Printf("[%d] ID: %d | Nama: %s | Jenis: %s | Harga: Rp%.0f | Status: ⏳ MENUNGGU\n",
+				i+1, t.IdPembeli, t.Nama, t.JenisTiket, harga)
+			pendingFound = true
+		}
+	}
+
+	if !pendingFound {
+		fmt.Println("Tidak ada tiket yang menunggu konfirmasi.")
+		return
+	}
+
+	var targetID int
+	fmt.Print("Masukkan ID pembeli yang ingin dikonfirmasi: ")
+	fmt.Scan(&targetID)
+
+	found := false
+for i := 0; i < nTiket && !found; i++ {
+    if dataTiket[i].IdPembeli == targetID && dataTiket[i].Status == "pending" {
+        dataTiket[i].Status = "confirmed"
+        fmt.Printf("Tiket dengan ID %d berhasil dikonfirmasi!\n", targetID)
+        found = true
+    }
+}
+
+
+	if !found {
+		fmt.Println("ID tidak ditemukan atau tiket sudah dikonfirmasi/ditolak.")
+	}
+}
+
+func tolakTiket() {
+	if nTiket == 0 {
+		fmt.Println("Belum ada tiket untuk ditolak.")
+		return
+	}
+
+	fmt.Println("\n=== TOLAK TIKET ===")
+
+	pendingFound := false
+	for i := 0; i < nTiket; i++ {
+		if dataTiket[i].Status == "pending" {
+			t := dataTiket[i]
+			var harga float64
+			switch strings.ToLower(t.JenisTiket) {
+			case "festival":
+				harga = FestivalPrice
+			case "vip":
+				harga = VIPPrice
+			case "tribun":
+				harga = TribunPrice
+			default:
+				harga = t.Harga
+			}
+			fmt.Printf("[%d] ID: %d | Nama: %s | Jenis: %s | Harga: Rp%.0f | Status: ⏳ MENUNGGU\n",
+				i+1, t.IdPembeli, t.Nama, t.JenisTiket, harga)
+			pendingFound = true
+		}
+	}
+
+	if !pendingFound {
+		fmt.Println("Tidak ada tiket yang menunggu konfirmasi.")
+		return
+	}
+
+	var targetID int
+	fmt.Print("Masukkan ID pembeli yang ingin ditolak: ")
+	fmt.Scan(&targetID)
+
+	found := false
+for i := 0; i < nTiket && !found; i++ {
+    if dataTiket[i].IdPembeli == targetID && dataTiket[i].Status == "pending" {
+        dataTiket[i].Status = "rejected"
+        fmt.Printf("Tiket dengan ID %d berhasil ditolak!\n", targetID)
+        found = true
+    }
+}
+
+
+	if !found {
+		fmt.Println("ID tidak ditemukan atau tiket sudah dikonfirmasi/ditolak.")
+	}
+}
+
+func urutkanTiketByID() {
+	for i := 0; i < nTiket-1; i++ {
+		minIdx := i
+		for j := i + 1; j < nTiket; j++ {
+			if dataTiket[j].IdPembeli < dataTiket[minIdx].IdPembeli {
+				minIdx = j
+			}
+		}
+		dataTiket[i], dataTiket[minIdx] = dataTiket[minIdx], dataTiket[i]
+	}
+}
+
+func binarySearchByID(target int) int {
+	low, high := 0, nTiket-1
+	for low <= high {
+		mid := (low + high) / 2
+		if dataTiket[mid].IdPembeli == target {
+			return mid
+		} else if dataTiket[mid].IdPembeli < target {
+			low = mid + 1
+		} else {
+			high = mid - 1
+		}
+	}
+	return -1
+}
+
+func cariTiketBerdasarkanID() {
+	if nTiket == 0 {
+		fmt.Println("Belum ada tiket untuk dicari.")
+		return
+	}
+
+	var inputID int
+	fmt.Print("Masukkan ID pembeli yang ingin dicari: ")
+	fmt.Scan(&inputID)
+
+	// Urutkan dulu supaya binary search bisa jalan
+	urutkanTiketByID()
+
+	idx := binarySearchByID(inputID)
+
+	if idx == -1 {
+		fmt.Println("Tiket dengan ID tersebut tidak ditemukan.")
+		return
+	}
+
+	t := dataTiket[idx]
+	var harga float64
+	switch strings.ToLower(t.JenisTiket) {
+	case "festival":
+		harga = FestivalPrice
+	case "vip":
+		harga = VIPPrice
+	case "tribun":
+		harga = TribunPrice
+	default:
+		harga = t.Harga
+	}
+
+	statusColor := ""
+	switch t.Status {
+	case "confirmed":
+		statusColor = "✅ DIKONFIRMASI"
+	case "pending":
+		statusColor = "⏳ MENUNGGU"
+	case "rejected":
+		statusColor = "❌ DITOLAK"
+	}
+
+	fmt.Println("\n=== HASIL PENCARIAN ===")
+	fmt.Printf("Festival: Rp%.0f | VIP: Rp%.0f | Tribun: Rp%.0f\n", FestivalPrice, VIPPrice, TribunPrice)
+	fmt.Println("=" + strings.Repeat("=", 80))
+
+	fmt.Printf("ID: %d | Nama: %s | Jenis: %s | Harga: Rp%.0f | Status: %s | Tanggal: %s\n",
+		t.IdPembeli, t.Nama, t.JenisTiket, harga, statusColor, t.Tanggal.Format("02-01-2006 15:04"))
+}
+
+
+func urutTiketBerdasarkanHarga() {
+	if nTiket == 0 {
+		fmt.Println("Belum ada tiket untuk diurutkan.")
+		return
+	}
+
+	i := 1
+	for i <= nTiket-1 {
+		idxMin := i - 1
+		j := i
+
+		for j < nTiket {
+			var hargaJ, hargaMin float64
+
+			switch strings.ToLower(dataTiket[j].JenisTiket) {
+			case "festival":
+				hargaJ = FestivalPrice
+			case "vip":
+				hargaJ = VIPPrice
+			case "tribun":
+				hargaJ = TribunPrice
+			default:
+				hargaJ = dataTiket[j].Harga
+			}
+
+			switch strings.ToLower(dataTiket[idxMin].JenisTiket) {
+			case "festival":
+				hargaMin = FestivalPrice
+			case "vip":
+				hargaMin = VIPPrice
+			case "tribun":
+				hargaMin = TribunPrice
+			default:
+				hargaMin = dataTiket[idxMin].Harga
+			}
+
+			if hargaJ < hargaMin {
+				idxMin = j
+			}
+			j++
+		}
+
+		// Tukar elemen
+		dataTiket[idxMin], dataTiket[i-1] = dataTiket[i-1], dataTiket[idxMin]
+		i++
+	}
+
+	fmt.Println("Tiket berhasil diurutkan berdasarkan harga.")
+	tampilkanSemuaTiket()
+}
+
+
+func urutTiketBerdasarkanNama() {
+	if nTiket == 0 {
+		fmt.Println("Belum ada tiket untuk diurutkan.")
+		return
+	}
+
+	i := 1
+	for i <= nTiket-1 {
+		j := i
+		temp := dataTiket[j]
+
+		// urutkan berdasarkan nama secara ascending (A-Z)
+		for j > 0 && strings.ToLower(temp.Nama) < strings.ToLower(dataTiket[j-1].Nama) {
+			dataTiket[j] = dataTiket[j-1]
+			j = j - 1
+		}
+		dataTiket[j] = temp
+		i = i + 1
+	}
+
+	fmt.Println("\n=== TIKET BERHASIL DIURUTKAN BERDASARKAN NAMA (A-Z) ===")
+	tampilkanSemuaTiket()
+}
+
+
+func totalPendapatan() float64 {
+	var total float64
+	for i := 0; i < nTiket; i++ {
+		if dataTiket[i].Status == "confirmed" {
+			total += getHargaByJenis(dataTiket[i].JenisTiket)
+		}
+	}
+	return total
+}
